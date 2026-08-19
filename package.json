@@ -1,0 +1,13 @@
+{
+  "name": "ielts-dardi-bot",
+  "version": "1.0.0",
+  "description": "IELTS Dardi Telegram bot - category-first Q&A submission and moderation, deployed on Vercel with Supabase.",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
