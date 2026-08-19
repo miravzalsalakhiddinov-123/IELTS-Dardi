@@ -139,17 +139,20 @@ async function handleSubmission(message, category) {
 
   if (error) {
     console.error('insert question error:', error);
-    await tg.sendMessage(chatId, "Sorty, something went wrong saving your question. Please try again.");
+    await tg.sendMessage(chatId, "Sorry, something went wrong saving your question. Please try again.");
     return;
   }
 
-  await tg.sendMessage(
-    chatId,
-    `✅ Your question has been submitted!\n` +
-    `Question #${question.id} has been sent to the IELTS DARDI team for approval.`
-  );
-
-  await forwardToAdmin(question, message);
+  // These two don't depend on each other, so fire them together instead of
+  // waiting on one before starting the other — cuts the response time roughly in half.
+  await Promise.all([
+    tg.sendMessage(
+      chatId,
+      `✅ Your question has been submitted!\n` +
+      `Question #${question.id} has been sent to the IELTS DARDI team for approval.`
+    ),
+    forwardToAdmin(question, message),
+  ]);
 }
 
 async function forwardToAdmin(question, originalMessage) {
@@ -202,6 +205,10 @@ async function handleCallback(cq) {
       question_id: null,
     });
     await tg.answerCallbackQuery(cq.id);
+
+    // Remove the "choose your category" message so it doesn't linger once picked.
+    await tg.deleteMessage(chatId, cq.message.message_id);
+
     await tg.sendMessage(
       chatId,
       `${label(category)}\n\n` +
