@@ -284,10 +284,9 @@ async function handlePublish(id, cq) {
   }
 
   const channelText =
-    `💬 #${q.id} ${tag(q.category)}\n\n` +
+    `#${q.id} ${tag(q.category)}\n\n` +
     `❓ <b>${tg.escapeHtml(q.text_content || '')}</b>` +
-    `${q.attachment_type ? '\n' + attachmentNote(q.attachment_type) : ''}\n\n` +
-    `👇 Share your advice in the comments`;
+    `${q.attachment_type ? '\n' + attachmentNote(q.attachment_type) : ''}`;
 
   let published;
   if (q.attachment_type && channelText.length <= 1024) {
