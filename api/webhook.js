@@ -1,6 +1,6 @@
 const tg = require('../lib/telegram');
 const supabase = require('../lib/supabase');
-const { CATEGORIES, categoryKeyboard, label } = require('../lib/categories');
+const { CATEGORIES, categoryKeyboard, label, tag } = require('../lib/categories');
 
 const ADMIN_CHAT_ID = Number(process.env.ADMIN_CHAT_ID);
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -149,7 +149,8 @@ async function handleSubmission(message, category) {
     tg.sendMessage(
       chatId,
       `✅ Your question has been submitted!\n` +
-      `Question #${question.id} has been sent to the IELTS DARDI team for approval.`,
+      `Question #${question.id} has been sent to the IELTS DARDI team for approval.\n\n` +
+      `📢 Once it's live, you can find it and the answers in ${CHANNEL_ID}.`,
       { reply_markup: { inline_keyboard: [[{ text: '📝 Ask another question', callback_data: 'restart' }]] } }
     ),
     forwardToAdmin(question, message),
@@ -283,12 +284,10 @@ async function handlePublish(id, cq) {
   }
 
   const channelText =
-    `💬 <b>Student Question #${q.id}</b>\n` +
-    `${label(q.category)}\n\n` +
-    `❓ ${tg.escapeHtml(q.text_content || '')}` +
+    `💬 #${q.id} ${tag(q.category)}\n\n` +
+    `❓ <b>${tg.escapeHtml(q.text_content || '')}</b>` +
     `${q.attachment_type ? '\n' + attachmentNote(q.attachment_type) : ''}\n\n` +
-    `👥 <b>What do you think?</b>\n` +
-    `Share your advice in the comments below 👇`;
+    `👇 Share your advice in the comments`;
 
   let published;
   if (q.attachment_type && channelText.length <= 1024) {
