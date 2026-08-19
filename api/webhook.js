@@ -55,13 +55,9 @@ async function handleMessage(message) {
   const userId = message.from.id;
   const text = message.text || '';
 
-  if (text.trim() === '/start') {
+  if (text.trim() === '/start' || text.trim() === '/ask') {
     await supabase.from('user_sessions').delete().eq('user_id', userId);
-    await tg.sendMessage(
-      chatId,
-      "👋 Welcome to <b>IELTS Dardi</b>!\n\nChoose your category:",
-      { reply_markup: categoryKeyboard() }
-    );
+    await sendCategoryPicker(chatId);
     return;
   }
 
@@ -88,6 +84,10 @@ async function handleMessage(message) {
     .maybeSingle();
 
   if (session?.state === 'awaiting_question' && session.category) {
+    // Clean up the "please send your question" prompt now that they've answered it.
+    if (session.prompt_message_id) {
+      await tg.deleteMessage(chatId, session.prompt_message_id);
+    }
     await handleSubmission(message, session.category);
     await supabase.from('user_sessions').delete().eq('user_id', userId);
     return;
@@ -149,7 +149,8 @@ async function handleSubmission(message, category) {
     tg.sendMessage(
       chatId,
       `✅ Your question has been submitted!\n` +
-      `Question #${question.id} has been sent to the IELTS DARDI team for approval.`
+      `Question #${question.id} has been sent to the IELTS DARDI team for approval.`,
+      { reply_markup: { inline_keyboard: [[{ text: '📝 Ask another question', callback_data: 'restart' }]] } }
     ),
     forwardToAdmin(question, message),
   ]);
@@ -183,6 +184,14 @@ function describeType(question) {
   return parts.length ? parts.join(' + ') : 'Text';
 }
 
+async function sendCategoryPicker(chatId) {
+  return tg.sendMessage(
+    chatId,
+    "👋 What are you having trouble with? Choose a category:",
+    { reply_markup: categoryKeyboard() }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Callback queries (category buttons + admin Publish/Edit/Reject)
 // ---------------------------------------------------------------------------
@@ -204,12 +213,11 @@ async function handleCallback(cq) {
       category,
       question_id: null,
     });
-    await tg.answerCallbackQuery(cq.id);
-
     // Remove the "choose your category" message so it doesn't linger once picked.
+    await tg.answerCallbackQuery(cq.id);
     await tg.deleteMessage(chatId, cq.message.message_id);
 
-    await tg.sendMessage(
+    const prompt = await tg.sendMessage(
       chatId,
       `${label(category)}\n\n` +
       `Please send your question.\n\n` +
@@ -220,6 +228,22 @@ async function handleCallback(cq) {
       `• A voice message\n\n` +
       `We'll review it and publish it anonymously if it's suitable.`
     );
+
+    if (prompt.ok) {
+      await supabase
+        .from('user_sessions')
+        .update({ prompt_message_id: prompt.result.message_id })
+        .eq('user_id', userId);
+    }
+    return;
+  }
+
+  if (data === 'restart') {
+    await supabase.from('user_sessions').delete().eq('user_id', userId);
+    await tg.answerCallbackQuery(cq.id);
+    // Drop the "✅ submitted" confirmation now that they're starting a new one.
+    await tg.deleteMessage(chatId, cq.message.message_id);
+    await sendCategoryPicker(chatId);
     return;
   }
 
@@ -259,10 +283,11 @@ async function handlePublish(id, cq) {
   }
 
   const channelText =
-    `💬 Student Question #${q.id}\n` +
-    `❓ ${q.text_content || ''}` +
+    `💬 <b>Student Question #${q.id}</b>\n` +
+    `${label(q.category)}\n\n` +
+    `❓ ${tg.escapeHtml(q.text_content || '')}` +
     `${q.attachment_type ? '\n' + attachmentNote(q.attachment_type) : ''}\n\n` +
-    `👥 What do you think?\n` +
+    `👥 <b>What do you think?</b>\n` +
     `Share your advice in the comments below 👇`;
 
   let published;

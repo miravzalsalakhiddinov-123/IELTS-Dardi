@@ -22,12 +22,17 @@ create index if not exists questions_category_idx on questions (category);
 -- Tracks what a user (student OR admin) is currently doing, since serverless
 -- functions have no memory between requests.
 create table if not exists user_sessions (
-  user_id      bigint primary key,
-  state        text not null,      -- 'awaiting_question' | 'awaiting_edit'
-  category     text,               -- set when state = 'awaiting_question'
-  question_id  bigint,             -- set when state = 'awaiting_edit'
-  updated_at   timestamptz not null default now()
+  user_id             bigint primary key,
+  state               text not null,      -- 'awaiting_question' | 'awaiting_edit'
+  category            text,               -- set when state = 'awaiting_question'
+  question_id         bigint,             -- set when state = 'awaiting_edit'
+  prompt_message_id   bigint,             -- the "please send your question" message, so we can delete it once they answer
+  updated_at          timestamptz not null default now()
 );
+
+-- If you already ran this schema before adding prompt_message_id, this line
+-- safely adds the new column without touching your existing data.
+alter table user_sessions add column if not exists prompt_message_id bigint;
 
 -- Keep updated_at fresh automatically.
 create or replace function set_updated_at()
