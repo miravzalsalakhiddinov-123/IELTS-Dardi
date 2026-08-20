@@ -74,7 +74,7 @@ async function handleMessage(message) {
       .maybeSingle();
 
     if (session?.state === 'awaiting_edit' && session.question_id) {
-      await handleAdminEditSubmit(session.question_id, text, chatId);
+      await handleAdminEditSubmit(session.question_id, text, message.entities, chatId);
       await supabase.from('user_sessions').delete().eq('user_id', userId);
       return;
     }
@@ -202,14 +202,25 @@ function buildFullPost(q) {
   return `${buildChannelText(q)}\n\n📩 Send your questions <a href="${BOT_LINK}">here</a>`;
 }
 
+// Sends text/caption, and if it contains Premium/custom emoji the bot isn't
+// allowed to send (that requires the bot to own a Fragment collectible
+// username), automatically falls back to plain fallback glyphs instead of
+// failing outright.
+async function sendWithEmojiFallback(text, sendOnce) {
+  const res = await sendOnce(text);
+  if (!res.ok && text.includes('tg-emoji') && /custom.?emoji/i.test(res.description || '')) {
+    console.warn('Custom emoji entities rejected (bot needs a Fragment username) — falling back to plain glyphs.');
+    return sendOnce(tg.stripCustomEmoji(text));
+  }
+  return res;
+}
+
 // Shows the admin exactly what will be posted, labeled as a preview so it's
 // never confused with the real thing (this message only ever goes to the
 // admin chat, never to CHANNEL_ID).
 async function sendChannelPreview(adminChatId, q) {
-  return tg.sendMessage(
-    adminChatId,
-    `👁 <b>Preview — this is exactly what will be posted:</b>\n\n${buildFullPost(q)}`
-  );
+  const previewText = `👁 <b>Preview — this is exactly what will be posted:</b>\n\n${buildFullPost(q)}`;
+  return sendWithEmojiFallback(previewText, (t) => tg.sendMessage(adminChatId, t));
 }
 
 function describeType(question) {
@@ -324,17 +335,17 @@ async function handlePublish(id, cq) {
   let published;
   if (q.attachment_type && channelText.length <= 1024) {
     // Attachment + caption fits Telegram's 1024-char caption limit
-    if (q.attachment_type === 'photo') published = await tg.sendPhoto(CHANNEL_ID, q.file_id, { caption: channelText });
-    else if (q.attachment_type === 'document') published = await tg.sendDocument(CHANNEL_ID, q.file_id, { caption: channelText });
-    else if (q.attachment_type === 'voice') published = await tg.sendVoice(CHANNEL_ID, q.file_id, { caption: channelText });
+    if (q.attachment_type === 'photo') published = await sendWithEmojiFallback(channelText, (t) => tg.sendPhoto(CHANNEL_ID, q.file_id, { caption: t }));
+    else if (q.attachment_type === 'document') published = await sendWithEmojiFallback(channelText, (t) => tg.sendDocument(CHANNEL_ID, q.file_id, { caption: t }));
+    else if (q.attachment_type === 'voice') published = await sendWithEmojiFallback(channelText, (t) => tg.sendVoice(CHANNEL_ID, q.file_id, { caption: t }));
   } else if (q.attachment_type) {
     // Too long for a caption — send attachment, then the full text separately
     if (q.attachment_type === 'photo') await tg.sendPhoto(CHANNEL_ID, q.file_id);
     else if (q.attachment_type === 'document') await tg.sendDocument(CHANNEL_ID, q.file_id);
     else if (q.attachment_type === 'voice') await tg.sendVoice(CHANNEL_ID, q.file_id);
-    published = await tg.sendMessage(CHANNEL_ID, channelText);
+    published = await sendWithEmojiFallback(channelText, (t) => tg.sendMessage(CHANNEL_ID, t));
   } else {
-    published = await tg.sendMessage(CHANNEL_ID, channelText);
+    published = await sendWithEmojiFallback(channelText, (t) => tg.sendMessage(CHANNEL_ID, t));
   }
 
   await supabase
@@ -380,22 +391,31 @@ async function handleEditStart(id, cq, adminUserId) {
   // so "current version" actually means the live version.
   await tg.sendMessage(cq.message.chat.id, `Current version students see:\n\n${buildChannelText(q)}`);
 
-  // Whatever's typed next replaces it, taken literally (plain text, your
-  // own emojis, no markup needed) — the 📩 link gets re-added automatically.
+  // Whatever's typed next replaces it. Use Telegram's own formatting toolbar
+  // (bold/italic/spoiler) and emoji keyboard — including Premium/animated
+  // emoji, if your account has them — and it carries over exactly, no HTML
+  // needed.
   await tg.sendMessage(
     cq.message.chat.id,
-    `Send the replacement text for <b>Question #${id}</b> below — plain text, ` +
-    `add whatever emojis you like. No need to include the hashtag or the ` +
-    `"send your questions" link, those stay automatic.`
+    `Send the replacement text for <b>Question #${id}</b> below. Format it ` +
+    `and add emojis (Premium ones too) the normal way, right in this chat. ` +
+    `No need to include the hashtag or the "send your questions" link, ` +
+    `those stay automatic.\n\n` +
+    `<i>Note: animated Premium emoji only show as animated to students if ` +
+    `this bot's account owns a Fragment collectible username — otherwise ` +
+    `they post as the plain fallback glyph.</i>`
   );
 }
 
-async function handleAdminEditSubmit(id, newText, adminChatId) {
-  // Store literally (escaped) — so whatever the admin typed shows up exactly
-  // as typed, with no HTML parsing surprises.
+async function handleAdminEditSubmit(id, newText, entities, adminChatId) {
+  // Store as HTML built from Telegram's own formatting entities — so bold,
+  // italic, spoiler, links, and emoji (incl. Premium) typed with the normal
+  // Telegram toolbar/keyboard come out exactly as typed.
+  const finalHtml = tg.entitiesToHtml(newText, entities || []);
+
   const { data: q, error } = await supabase
     .from('questions')
-    .update({ final_text: tg.escapeHtml(newText) })
+    .update({ final_text: finalHtml })
     .eq('id', id)
     .select()
     .single();

@@ -87,11 +87,17 @@ live. Message it `/start`.
   here" line linking back to the bot (`BOT_LINK` at the top of
   `api/webhook.js` — update it if the bot's @username ever changes) — this
   is added automatically, so Edit only needs to touch the question text.
-- **Edit** shows you the current post text (as a copyable code block) and
-  asks you to send the full replacement — reword it, add your own emojis,
-  whatever you like. Whatever you send becomes the exact post text, and a
-  fresh preview + review card comes back so you can check it before
-  publishing.
+- **Edit** shows you the current post rendered exactly as students see it,
+  then lets you type the replacement right in the chat using Telegram's own
+  formatting toolbar and emoji keyboard — bold/italic/spoiler, links, and
+  emoji (Premium/animated ones too, if your account has them) all carry
+  over exactly, no HTML or markup needed. A fresh preview + review card
+  comes back so you can check it before publishing.
+  - **Premium/animated emoji caveat:** Telegram only lets a bot *send*
+    custom emoji entities if that bot account owns a paid Fragment
+    collectible username. Without one, Publish still works — it
+    automatically falls back to the plain (non-animated) glyph instead of
+    failing.
 - **Reject** just marks the row `rejected` — nothing is posted.
 
 ## Extending it
