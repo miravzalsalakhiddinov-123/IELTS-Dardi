@@ -195,11 +195,15 @@ function buildChannelText(q) {
   );
 }
 
-// The core text plus the "send your questions here" link — this is what
-// actually gets published/previewed. The link is added automatically so it's
-// never missing and never needs retyping when editing the core text.
+// The core text plus the closing lines — this is what actually gets
+// published/previewed. Added automatically so they're never missing and
+// never need retyping when editing the core text.
 function buildFullPost(q) {
-  return `${buildChannelText(q)}\n\n📩 Send your questions <a href="${BOT_LINK}">here</a>`;
+  return (
+    `${buildChannelText(q)}\n\n` +
+    `Your advice might be exactly what another student needs. Share it below 👇\n\n` +
+    `📩 Send your questions <a href="${BOT_LINK}">here</a>`
+  );
 }
 
 // Sends text/caption, and if it contains Premium/custom emoji the bot isn't
