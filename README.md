@@ -76,13 +76,22 @@ live. Message it `/start`.
   `user_sessions` (Postgres, since serverless functions have no memory
   between requests) and prompts for the actual question.
 - Whatever the student sends next (text / photo / document / voice) is
-  saved as one row in `questions`, and copied to your admin chat with a
-  **Publish / Edit / Reject** review card underneath.
-- **Publish** posts to `CHANNEL_ID` in the exact format from your spec
-  (`📖 Reading | Question #245 ... 💬 Discuss in the comments...`),
-  attachment included if there was one.
-- **Edit** asks you to send replacement text, updates the row, and reposts
-  a fresh review card.
+  saved as one row in `questions`, and copied to your admin chat, followed
+  by a **👁 Preview** message showing the *exact* text that will be posted
+  to the channel (hashtag, emoji, formatting — all of it), then the
+  **Publish / Edit / Reject** review card.
+- Hashtags are always lowercase (`#reading`, not `#Reading`) — set once in
+  `lib/categories.js`, no per-post typing needed.
+- **Publish** posts the previewed text to `CHANNEL_ID` as-is, attachment
+  included if there was one. Every post ends with a "📩 Send your questions
+  here" line linking back to the bot (`BOT_LINK` at the top of
+  `api/webhook.js` — update it if the bot's @username ever changes) — this
+  is added automatically, so Edit only needs to touch the question text.
+- **Edit** shows you the current post text (as a copyable code block) and
+  asks you to send the full replacement — reword it, add your own emojis,
+  whatever you like. Whatever you send becomes the exact post text, and a
+  fresh preview + review card comes back so you can check it before
+  publishing.
 - **Reject** just marks the row `rejected` — nothing is posted.
 
 ## Extending it

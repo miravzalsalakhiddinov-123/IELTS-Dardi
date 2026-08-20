@@ -7,6 +7,7 @@ create table if not exists questions (
   username              text,
   first_name            text,
   text_content          text,
+  final_text            text,                 -- the exact channel post text, admin-editable (emojis, wording, etc.); falls back to an auto-generated version when null
   attachment_type       text,                 -- 'photo' | 'document' | 'voice' | null
   file_id               text,
   status                text not null default 'pending', -- 'pending' | 'published' | 'rejected'
@@ -33,6 +34,10 @@ create table if not exists user_sessions (
 -- If you already ran this schema before adding prompt_message_id, this line
 -- safely adds the new column without touching your existing data.
 alter table user_sessions add column if not exists prompt_message_id bigint;
+
+-- If you already ran this schema before adding final_text, this line safely
+-- adds the new column without touching your existing data.
+alter table questions add column if not exists final_text text;
 
 -- Keep updated_at fresh automatically.
 create or replace function set_updated_at()

@@ -6,6 +6,10 @@ const ADMIN_CHAT_ID = Number(process.env.ADMIN_CHAT_ID);
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
+// The bot's own link, appended to every channel post so readers know where
+// to send their own questions. Change this if the bot's @username changes.
+const BOT_LINK = 'https://t.me/ielts_dardi_bot';
+
 const REVIEW_KEYBOARD = (id) => ({
   inline_keyboard: [[
     { text: '✅ Publish', callback_data: `pub:${id}` },
@@ -161,19 +165,51 @@ async function forwardToAdmin(question, originalMessage) {
   // Relay the exact original content (with attachment) to the admin first...
   await tg.copyMessage(ADMIN_CHAT_ID, originalMessage.chat.id, originalMessage.message_id);
 
-  // ...then send the review card underneath it.
+  // ...then a preview of exactly what will be posted to the channel (so you
+  // can see it before it goes live, without actually posting it)...
+  await sendChannelPreview(ADMIN_CHAT_ID, question);
+
+  // ...then the review card. Publish uses this preview as-is — hit Edit
+  // first if you want to change wording, add your own emojis, etc.
   const typeLabel = describeType(question);
   const reviewText =
     `<b>Question #${question.id}</b>\n\n` +
     `Category: ${label(question.category)}\n` +
-    `Type: ${typeLabel}\n\n` +
-    `Text:\n${question.text_content ? tg.escapeHtml(question.text_content) : '<i>(no text, see attachment above)</i>'}`;
+    `Type: ${typeLabel}`;
 
   const sent = await tg.sendMessage(ADMIN_CHAT_ID, reviewText, { reply_markup: REVIEW_KEYBOARD(question.id) });
 
   if (sent.ok) {
     await supabase.from('questions').update({ admin_message_id: sent.result.message_id }).eq('id', question.id);
   }
+}
+
+// The exact text that gets posted to the channel. Uses the admin's edited
+// version (final_text) if there is one, otherwise the auto-generated default.
+function buildChannelText(q) {
+  if (q.final_text) return q.final_text;
+  return (
+    `#${q.id} ${tag(q.category)}\n\n` +
+    `❓ <b>${tg.escapeHtml(q.text_content || '')}</b>` +
+    `${q.attachment_type ? '\n' + attachmentNote(q.attachment_type) : ''}`
+  );
+}
+
+// The core text plus the "send your questions here" link — this is what
+// actually gets published/previewed. The link is added automatically so it's
+// never missing and never needs retyping when editing the core text.
+function buildFullPost(q) {
+  return `${buildChannelText(q)}\n\n📩 Send your questions <a href="${BOT_LINK}">here</a>`;
+}
+
+// Shows the admin exactly what will be posted, labeled as a preview so it's
+// never confused with the real thing (this message only ever goes to the
+// admin chat, never to CHANNEL_ID).
+async function sendChannelPreview(adminChatId, q) {
+  return tg.sendMessage(
+    adminChatId,
+    `👁 <b>Preview — this is exactly what will be posted:</b>\n\n${buildFullPost(q)}`
+  );
 }
 
 function describeType(question) {
@@ -283,10 +319,7 @@ async function handlePublish(id, cq) {
     return;
   }
 
-  const channelText =
-    `#${q.id} ${tag(q.category)}\n\n` +
-    `❓ <b>${tg.escapeHtml(q.text_content || '')}</b>` +
-    `${q.attachment_type ? '\n' + attachmentNote(q.attachment_type) : ''}`;
+  const channelText = buildFullPost(q);
 
   let published;
   if (q.attachment_type && channelText.length <= 1024) {
@@ -329,6 +362,12 @@ async function handleReject(id, cq) {
 }
 
 async function handleEditStart(id, cq, adminUserId) {
+  const { data: q, error } = await supabase.from('questions').select('*').eq('id', id).single();
+  if (error || !q) {
+    await tg.answerCallbackQuery(cq.id, { text: 'Question not found' });
+    return;
+  }
+
   await supabase.from('user_sessions').upsert({
     user_id: adminUserId,
     state: 'awaiting_edit',
@@ -336,13 +375,23 @@ async function handleEditStart(id, cq, adminUserId) {
     question_id: id,
   });
   await tg.answerCallbackQuery(cq.id);
-  await tg.sendMessage(cq.message.chat.id, `Send the corrected text for <b>Question #${id}</b>.`);
+
+  // Show the current post as plain text (no HTML parsing) so it's easy to
+  // copy, tweak — reword it, add your own emojis, whatever — and send back.
+  // Whatever you send becomes the exact text that gets posted, unformatted.
+  await tg.sendMessage(
+    cq.message.chat.id,
+    `Send the full replacement post for <b>Question #${id}</b> below.\n\n` +
+    `This becomes exactly what gets posted to the channel, so include the ` +
+    `hashtag/emojis you want. Current version to copy from:\n\n` +
+    `<code>${tg.escapeHtml(buildChannelText(q))}</code>`
+  );
 }
 
 async function handleAdminEditSubmit(id, newText, adminChatId) {
   const { data: q, error } = await supabase
     .from('questions')
-    .update({ text_content: newText })
+    .update({ final_text: newText })
     .eq('id', id)
     .select()
     .single();
@@ -352,14 +401,15 @@ async function handleAdminEditSubmit(id, newText, adminChatId) {
     return;
   }
 
-  await tg.sendMessage(adminChatId, `✅ Text updated for Question #${id}.`);
+  await tg.sendMessage(adminChatId, `✅ Post text updated for Question #${id}.`);
 
-  // Re-send a fresh review card so the admin can Publish/Reject with the new text.
+  // Fresh preview + review card so the admin can confirm the new version before Publish/Reject.
+  await sendChannelPreview(adminChatId, q);
+
   const reviewText =
     `<b>Question #${q.id}</b> (edited)\n\n` +
     `Category: ${label(q.category)}\n` +
-    `Type: ${describeType(q)}\n\n` +
-    `Text:\n${tg.escapeHtml(q.text_content || '')}`;
+    `Type: ${describeType(q)}`;
 
   const sent = await tg.sendMessage(adminChatId, reviewText, { reply_markup: REVIEW_KEYBOARD(q.id) });
   if (sent.ok) {
