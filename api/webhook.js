@@ -376,22 +376,26 @@ async function handleEditStart(id, cq, adminUserId) {
   });
   await tg.answerCallbackQuery(cq.id);
 
-  // Show the current post as plain text (no HTML parsing) so it's easy to
-  // copy, tweak — reword it, add your own emojis, whatever — and send back.
-  // Whatever you send becomes the exact text that gets posted, unformatted.
+  // Show the post rendered exactly as students see it (not raw HTML source),
+  // so "current version" actually means the live version.
+  await tg.sendMessage(cq.message.chat.id, `Current version students see:\n\n${buildChannelText(q)}`);
+
+  // Whatever's typed next replaces it, taken literally (plain text, your
+  // own emojis, no markup needed) — the 📩 link gets re-added automatically.
   await tg.sendMessage(
     cq.message.chat.id,
-    `Send the full replacement post for <b>Question #${id}</b> below.\n\n` +
-    `This becomes exactly what gets posted to the channel, so include the ` +
-    `hashtag/emojis you want. Current version to copy from:\n\n` +
-    `<code>${tg.escapeHtml(buildChannelText(q))}</code>`
+    `Send the replacement text for <b>Question #${id}</b> below — plain text, ` +
+    `add whatever emojis you like. No need to include the hashtag or the ` +
+    `"send your questions" link, those stay automatic.`
   );
 }
 
 async function handleAdminEditSubmit(id, newText, adminChatId) {
+  // Store literally (escaped) — so whatever the admin typed shows up exactly
+  // as typed, with no HTML parsing surprises.
   const { data: q, error } = await supabase
     .from('questions')
-    .update({ final_text: newText })
+    .update({ final_text: tg.escapeHtml(newText) })
     .eq('id', id)
     .select()
     .single();
